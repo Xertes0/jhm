@@ -15,25 +15,25 @@ validateMagic = do
 
 data CPInfo
   = CPClass
-      { nameIndex :: Word16
+      { clsNameIndex :: Word16
       }
   | CPFieldref
-      { classIndex :: Word16
-      , nameAndTypeIndex :: Word16
+      { fldrClassIndex :: Word16
+      , fldrNameAndTypeIndex :: Word16
       }
   | CPMethodref
-      { classIndex :: Word16
-      , nameAndTypeIndex :: Word16
+      { mthdrClassIndex :: Word16
+      , mthdrNameAndTypeIndex :: Word16
       }
   | CPString
-      { stringIndex :: Word16
+      { strStringIndex :: Word16
       }
   | CPNameAndType
-      { nameIndex :: Word16
-      , descIndex :: Word16
+      { natNameIndex :: Word16
+      , natDescIndex :: Word16
       }
   | CPUtf8
-      { bytes :: [Word8]
+      { utfBytes :: [Word8]
       }
   deriving (Show)
 
@@ -79,23 +79,39 @@ getConstantPool = do
   replicateM count getCPInfo
 
 data AccessFlag
-  = AccPublic
-  | AccFinal
-  | AccSuper
-  | AccInterface
-  | AccAbstract
-  | AccSynthetic
+  = AccAbstract
   | AccAnnotation
+  | AccBridge
   | AccEnum
+  | AccFinal
+  | AccInterface
+  | AccNative
+  | AccPrivate
+  | AccProtected
+  | AccPublic
+  | AccStatic
+  | AccStrict
+  | AccSuper
+  | AccSynchronized
+  | AccSynthetic
+  | AccVarargs
   deriving (Show)
 
 accessFlagMap :: [(Word16, AccessFlag)]
 accessFlagMap =
   [ (0x0001, AccPublic)
+  , (0x0002, AccPrivate)
+  , (0x0004, AccProtected)
+  , (0x0008, AccStatic)
   , (0x0010, AccFinal)
   , (0x0020, AccSuper)
+  , (0x0020, AccSynchronized)
+  , (0x0040, AccBridge)
+  , (0x0080, AccVarargs)
+  , (0x0100, AccNative)
   , (0x0200, AccInterface)
   , (0x0400, AccAbstract)
+  , (0x0800, AccStrict)
   , (0x1000, AccSynthetic)
   , (0x2000, AccAnnotation)
   , (0x4000, AccEnum)
@@ -106,11 +122,70 @@ getAccessFlags = do
   value <- getWord16be
   return $ map snd $ filter ((/= 0) . (.&. value) . fst) accessFlagMap
 
+getInterfaces :: Get [Word16]
+getInterfaces = do
+  count <- fromIntegral <$> getWord16be
+  replicateM count getWord16be
+
+data Attribute = Attribute
+  { attrNameIndex :: Word16
+  , attrInfo :: [Word8]
+  } deriving (Show)
+
+getAttribute :: Get Attribute
+getAttribute = do
+  nameIdx <- getWord16be
+  count <- fromIntegral <$> getWord32be
+  info <- replicateM count getWord8
+  return $ Attribute nameIdx info
+
+getAttributes :: Get [Attribute]
+getAttributes = do
+  count <- fromIntegral <$> getWord16be
+  replicateM count getAttribute
+
+data Field = Field
+  { fldAccessFlags :: [AccessFlag]
+  , fldNameIndex :: Word16
+  , fldDescIndex :: Word16
+  , fldAttributes :: [Attribute]
+  } deriving (Show)
+
+getField :: Get Field
+getField = Field <$> getAccessFlags <*> getWord16be <*> getWord16be <*> getAttributes
+
+getFields :: Get [Field]
+getFields = do
+  count <- fromIntegral <$> getWord16be
+  replicateM count getField
+
+data Method = Method
+  { mthdAccessFlags :: [AccessFlag]
+  , mthdNameIndex :: Word16
+  , mthdDescIndex :: Word16
+  , mthdAttibutes :: [Attribute]
+  } deriving (Show)
+
+getMethod :: Get Method
+getMethod =
+  Method <$> getAccessFlags <*> getWord16be <*> getWord16be <*> getAttributes
+
+getMethods :: Get [Method]
+getMethods = do
+  count <- fromIntegral <$> getWord16be
+  replicateM count getMethod
+
 data ClassFile = ClassFile
-  { minor :: Word16
-  , major :: Word16
-  , constantPool :: ConstantPool
-  , accessFlags :: [AccessFlag]
+  { clsfMinor :: Word16
+  , clsfMajor :: Word16
+  , clsfConstantPool :: ConstantPool
+  , clsfAccessFlags :: [AccessFlag]
+  , clsfThisClass :: Word16
+  , clsfSuperClass :: Word16
+  , clsfInterfaces :: [Word16]
+  , clsfFields :: [Field]
+  , clsfMethods :: [Method]
+  , clsfAttributes :: [Attribute]
   } deriving (Show)
 
 getClassFile :: Get ClassFile
@@ -120,6 +195,12 @@ getClassFile =
     <*> getWord16be
     <*> getConstantPool
     <*> getAccessFlags
+    <*> getWord16be
+    <*> getWord16be
+    <*> getInterfaces
+    <*> getFields
+    <*> getMethods
+    <*> getAttributes
 
 parseClassFile :: IO ClassFile
 parseClassFile = do
