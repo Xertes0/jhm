@@ -10,6 +10,10 @@ Below is a sample code that can be executed by this virtual machine.
 public class Main {
     public static void main(String[] args) {
         System.out.println("Hello world!");
+
+        int a = 20;
+        a += 12;
+        System.out.println(a);
     }
 }
 ```

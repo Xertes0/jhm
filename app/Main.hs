@@ -1,8 +1,8 @@
 module Main where
 
 import Codec.Binary.UTF8.String (decode)
-import Control.Applicative
 import Control.Monad
+import Control.Monad.Loops (whileM)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Lazy
 import Data.Binary.Get
@@ -343,43 +343,136 @@ getMain clsf =
   where
     cpool = clsfConstantPool clsf
 
-data Value = ValueCP
-  { valCPInfo :: CPInfo
+data Value
+  = ValueBoolean
+      { valBool :: Bool
+      }
+  | ValueInt
+      { valInt :: Int
+      }
+  | ValueShort
+      { valShort :: Int
+      }
+  | ValueFloat
+      { valFloat :: Float
+      }
+  | ValueCPInfo
+      { valCPInfo :: CPInfo
+      }
+  -- | LocalRef
+  --     { localRef ::
+  --     }
+  -- | LocalReturnAddress
+  --   { localRetAddr ::
+  --   }
+
+pushStack :: Value -> StateT (Frame, ConstantPool) Get ()
+pushStack val = do
+  (frame, cpool) <- get
+  put (frame {frmStack = frmStack frame ++ [val]}, cpool)
+
+popStack :: StateT (Frame, ConstantPool) Get Value
+popStack = do
+  (frame, cpool) <- get
+  put (frame {frmStack = tail $ frmStack frame}, cpool)
+  return $ head $ frmStack frame
+
+data Frame = Frame
+  { frmStack :: [Value]
+  , frmLocals :: [Value]
   }
 
-type Stack = [Value]
+mkFrame :: AttributeInfo -> Frame
+mkFrame (AttrCode {attrInfoMaxLocals = maxLocals}) =
+  Frame
+    { frmStack = []
+    , frmLocals = replicate (fromIntegral maxLocals) $ ValueInt 0
+    }
+mkFrame _ = error "Supplied attribute is not 'Code'"
 
-executeMethod :: CPInfo -> StateT (Stack, ConstantPool) Get (IO ())
+storeLocal :: Int -> Value -> StateT (Frame, ConstantPool) Get ()
+storeLocal idx val = do
+  (frame, cpool) <- get
+  let (h, t) = splitAt idx $ frmLocals frame
+  put (frame {frmLocals = h ++ [val] ++ tail t}, cpool)
+
+getLocal :: Int -> StateT (Frame, ConstantPool) Get Value
+getLocal idx = do
+  (frame, _) <- get
+  return $ frmLocals frame !! idx
+
+executeMethod :: CPInfo -> StateT (Frame, ConstantPool) Get (IO ())
 executeMethod (CPMethodref cls nat) = do
-  (stack, cpool) <- get
+  (_, cpool) <- get
   let cls' = snd $ getCPRef cls cpool
   let className = utfString $ snd $ getCPRef (clsName cls') cpool
   let nat' = snd $ getCPRef nat cpool
   let methodName = utfString $ snd $ getCPRef (natName nat') cpool
   let methodType = utfString $ snd $ getCPRef (natDesc nat') cpool
-  case className ++ "." ++ methodName ++ ":" ++ methodType of
+  let methodSig = className ++ "." ++ methodName ++ ":" ++ methodType
+  case methodSig of
     "java/io/PrintStream.println:(Ljava/lang/String;)V" -> do
-      put (drop 2 stack, cpool)
-      let str = utfString $ snd $ getCPRef (strString $ valCPInfo $ last $ take 2 stack) cpool
-      pure $ putStrLn str
-    _ -> error "Unknown method"
+      _ <- popStack
+      pure
+        . putStrLn
+        . utfString
+        . snd
+        . (flip getCPRef) cpool
+        . strString
+        . valCPInfo
+        =<< popStack
+    "java/io/PrintStream.println:(I)V" -> do
+      _ <- popStack
+      pure . putStrLn . show . valInt =<< popStack
+    _ -> error $ "Unknown method: '" ++ methodSig ++ "'"
 
 executeMethod _ = error "Supplied reference is not a method"
 
-executeInstruction :: Word8 -> StateT (Stack, ConstantPool) Get (IO ())
+executeInstruction :: Word8 -> StateT (Frame, ConstantPool) Get (IO ())
+
+-- bipush
+executeInstruction 0x10 = do
+  byte <- ValueInt . fromIntegral <$> lift getWord8
+  pushStack byte
+  return $ pure ()
 
 -- ldc
 executeInstruction 0x12 = do
-  (stack, cpool) <- get
+  (frame, cpool) <- get
   cpIdx <- fromIntegral <$> lift getWord8
-  put (stack ++ [ValueCP $ cpool !! cpIdx], cpool)
+  put (frame {frmStack = frmStack frame ++ [ValueCPInfo $ cpool !! cpIdx]}, cpool)
+  return $ pure ()
+
+-- iload_n
+executeInstruction 0x1b = do
+  -- TODO: Assert that the local is ValueInt
+  pushStack =<< getLocal 1
+  return $ pure ()
+
+-- istore
+executeInstruction 0x36 = do
+  idx <- fromIntegral <$> lift getWord8
+  storeLocal idx =<< popStack
+  return $ pure ()
+
+-- istore_n
+executeInstruction 0x3c = do
+  storeLocal 1 =<< popStack
+  return $ pure ()
+
+-- iinc
+executeInstruction 0x84 = do
+  cpIdx <- fromIntegral <$> lift getWord8
+  incValue <- fromIntegral <$> lift getWord8
+  (ValueInt oldLoc) <- getLocal cpIdx
+  storeLocal cpIdx $ ValueInt $ oldLoc + incValue
   return $ pure ()
 
 -- getstatic
 executeInstruction 0xb2 = do
-  (stack, cpool) <- get
+  (_, cpool) <- get
   cpIdx <- fromIntegral <$> lift getWord16be
-  put (stack ++ [ValueCP $ cpool !! cpIdx], cpool)
+  pushStack $ ValueCPInfo $ cpool !! cpIdx
   return $ pure ()
 
 -- return
@@ -393,15 +486,15 @@ executeInstruction 0xb6 = do
 
 executeInstruction ins = error $ "Unknown instruction: '0x" ++ showHex ins "'"
 
-executeCode :: StateT (Stack, ConstantPool) Get [IO ()]
-executeCode = many $ do
+executeCode :: StateT (Frame, ConstantPool) Get [IO ()]
+executeCode = whileM (not <$> lift isEmpty) $ do
   opcode <- lift getWord8
   executeInstruction opcode
 
 executeMain :: ClassFile -> [IO ()]
 executeMain clsf =
   runGet
-    (evalStateT executeCode ([], cpool))
+    (evalStateT executeCode (mkFrame mainCodeAttr, cpool))
     (B.pack $ attrInfoCode mainCodeAttr)
   where
     cpool = clsfConstantPool clsf
