@@ -39,6 +39,7 @@ data Value
   | ValueCPInfo
       { valCPInfo :: CPInfo
       }
+  deriving (Show)
   -- | LocalRef
   --     { localRef ::
   --     }
@@ -57,12 +58,12 @@ getCpool = do
 pushStack :: Value -> FrameState ()
 pushStack val = do
   (clsf, frame) <- get
-  put (clsf, frame {frmStack = frmStack frame ++ [val]})
+  put (clsf, frame {frmStack = val : frmStack frame})
 
 concatStack :: [Value] -> FrameState ()
 concatStack vals = do
   (clsf, frame) <- get
-  put (clsf, frame {frmStack = frmStack frame ++ vals})
+  put (clsf, frame {frmStack = vals ++ frmStack frame})
 
 popStack :: FrameState Value
 popStack = do

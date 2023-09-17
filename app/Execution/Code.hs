@@ -2,7 +2,8 @@ module Execution.Code
   ( executeCode
   ) where
 
-import Control.Monad.Loops (whileM)
+import Control.Monad
+import Control.Monad.Loops (whileM, whileM_)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Lazy
 import qualified Data.ByteString.Lazy as B
@@ -17,6 +18,11 @@ import Type.ClassFile
 import Type.Method
 import Utility.Assert
 
+iconstN :: Int -> FrameState (IO ())
+iconstN n = do
+  pushStack $ ValueInt n
+  return $ pure ()
+
 iloadN :: Int -> FrameState (IO ())
 iloadN n = do
   -- TODO: Assert that the local is ValueInt
@@ -28,7 +34,27 @@ istoreN n = do
   storeLocal n =<< popStack
   return $ pure ()
 
+ificmpC :: (Int -> Int -> Bool) -> FrameState (IO ())
+ificmpC f = do
+  -- TODO: This works only if 'offset' is positive, but since
+  -- it's a signed value, I assume it can be negative.
+  offset <- (+ (-3)) . fromIntegral <$> lift getInt16be
+  b <- valInt <$> popStack
+  a <- valInt <$> popStack
+  if a `f` b
+    then lift $ skip offset
+    else pure ()
+  return $ pure ()
+
 executeInstruction :: Word8 -> FrameState (IO ())
+
+executeInstruction 0x2 = iconstN (-1)
+executeInstruction 0x3 = iconstN 0
+executeInstruction 0x4 = iconstN 1
+executeInstruction 0x5 = iconstN 2
+executeInstruction 0x6 = iconstN 3
+executeInstruction 0x7 = iconstN 4
+executeInstruction 0x8 = iconstN 5
 
 -- bipush
 executeInstruction 0x10 = do
@@ -68,6 +94,13 @@ executeInstruction 0x60 = do
   pushStack $ ValueInt $ a + b
   return $ pure ()
 
+-- iadd
+executeInstruction 0x64 = do
+  b <- valInt <$> popStack
+  a <- valInt <$> popStack
+  pushStack $ ValueInt $ a - b
+  return $ pure ()
+
 -- iinc
 executeInstruction 0x84 = do
   cpIdx <- fromIntegral <$> lift getWord8
@@ -76,16 +109,27 @@ executeInstruction 0x84 = do
   storeLocal cpIdx $ ValueInt $ oldLoc + incValue
   return $ pure ()
 
+executeInstruction 0x9f = ificmpC (==)
+executeInstruction 0xa0 = ificmpC (/=)
+executeInstruction 0xa1 = ificmpC (<)
+executeInstruction 0xa2 = ificmpC (<=)
+executeInstruction 0xa3 = ificmpC (>)
+executeInstruction 0xa4 = ificmpC (>=)
+
 -- ireturn
 executeInstruction 0xac = do
   retVal <- popStack
   emptyStack
   pushStack retVal
+  -- TODO: Proper solution to stop executing instructions after return
+  -- statement.
+  whileM_ (not <$> lift isEmpty) $ lift getWord8
   return $ pure ()
 
 -- return
 executeInstruction 0xb1 = do
   emptyStack
+  whileM_ (not <$> lift isEmpty) $ lift getWord8
   return $ pure ()
 
 -- getstatic
@@ -121,24 +165,31 @@ invokeMethod (CPMethodref cls nat) = do
   let methodSig = className ++ "." ++ methodName ++ ":" ++ methodType
   case methodSig of
     "java/io/PrintStream.println:(Ljava/lang/String;)V" -> do
+      arg <- popStack
       _ <- popStack
-      putStrLn . utfString . snd . flip runCPRef cpool . strString . valCPInfo
-        <$> popStack
+      return
+        $ putStrLn
+        $ utfString
+        $ snd
+        $ flip runCPRef cpool
+        $ strString
+        $ valCPInfo arg
     "java/io/PrintStream.println:(I)V" -> do
+      arg <- popStack
       _ <- popStack
-      print . valInt <$> popStack
+      return $ print $ valInt arg
     _ -> do
       -- This assumes that the method is of the same class.
       let mthd = findMethod clsf $ tail $ dropWhile (/= '.') methodSig
       let mthdCodeAttr = findAttribute cpool $ mthdAttibutes mthd
       myStack <- getStack
       let argCount = countArguments $ snd $ runCPRef (mthdDesc mthd) cpool
+      replicateM_ argCount popStack
       let mthdFrame = mkFrame mthdCodeAttr
       let mthdFrame' =
             mthdFrame
               { frmLocals =
-                  (drop (length myStack - argCount) myStack)
-                    ++ (drop argCount $ frmLocals mthdFrame)
+                  take argCount myStack ++ drop argCount (frmLocals mthdFrame)
               }
       let (io, (_, retFrame)) =
             runGet
