@@ -24,7 +24,16 @@ executable jhm
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    other-modules: Execution.Code,
+                   Execution.Execute,
+                   Execution.Frame,
+                   Type.AccessFlag,
+                   Type.Attribute,
+                   Type.ClassFile,
+                   Type.ConstantPool,
+                   Type.Field,
+                   Type.Method,
+                   Utility.Assert
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
