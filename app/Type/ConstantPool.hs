@@ -3,7 +3,7 @@ module Type.ConstantPool
   , mkCPRefCPInfo
   , mkCPRefUtf8
   , CPInfo(..)
-  , ConstantPool(..)
+  , ConstantPool
   , getConstantPool
   ) where
 
