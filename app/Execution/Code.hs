@@ -112,9 +112,9 @@ executeInstruction 0x84 = do
 executeInstruction 0x9f = ificmpC (==)
 executeInstruction 0xa0 = ificmpC (/=)
 executeInstruction 0xa1 = ificmpC (<)
-executeInstruction 0xa2 = ificmpC (<=)
+executeInstruction 0xa2 = ificmpC (>=)
 executeInstruction 0xa3 = ificmpC (>)
-executeInstruction 0xa4 = ificmpC (>=)
+executeInstruction 0xa4 = ificmpC (<=)
 
 -- ireturn
 executeInstruction 0xac = do

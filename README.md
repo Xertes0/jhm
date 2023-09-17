@@ -15,7 +15,7 @@ public class Main {
 
     public static void main(String[] args) {
         System.out.println("Fibonacci(9) = ");
-        System.out.println(fibonacci(34));
+        System.out.println(fibonacci(9));
     }
 }
 ```
