@@ -1,14 +1,17 @@
 module Execution.Frame
-  ( Frame
+  ( Frame(..)
   , FrameState
   , Value(..)
   , mkFrame
-  , invokeMethod
+  , getClassFile
   , getCpool
   , storeLocal
   , getLocal
   , pushStack
+  , concatStack
   , popStack
+  , emptyStack
+  , getStack
   ) where
 
 import Control.Monad.Trans.State.Lazy
@@ -43,6 +46,9 @@ data Value
   --   { localRetAddr ::
   --   }
 
+getClassFile :: FrameState ClassFile
+getClassFile = fst <$> get
+
 getCpool :: FrameState ConstantPool
 getCpool = do
   (clsf, _) <- get
@@ -53,11 +59,27 @@ pushStack val = do
   (clsf, frame) <- get
   put (clsf, frame {frmStack = frmStack frame ++ [val]})
 
+concatStack :: [Value] -> FrameState ()
+concatStack vals = do
+  (clsf, frame) <- get
+  put (clsf, frame {frmStack = frmStack frame ++ vals})
+
 popStack :: FrameState Value
 popStack = do
   (clsf, frame) <- get
   put (clsf, frame {frmStack = tail $ frmStack frame})
   return $ head $ frmStack frame
+
+emptyStack :: FrameState ()
+emptyStack = do
+  (clsf, frame) <- get
+  put (clsf, frame {frmStack = []})
+  return ()
+
+getStack :: FrameState [Value]
+getStack = do
+  (_, frame) <- get
+  return $ frmStack frame
 
 data Frame = Frame
   { frmStack :: [Value]
@@ -82,24 +104,3 @@ getLocal :: Int -> FrameState Value
 getLocal idx = do
   (_, frame) <- get
   return $ frmLocals frame !! idx
-
-invokeMethod :: CPInfo -> FrameState (IO ())
-invokeMethod (CPMethodref cls nat) = do
-  cpool <- getCpool
-  let cls' = snd $ runCPRef cls cpool
-  let className = utfString $ snd $ runCPRef (clsName cls') cpool
-  let nat' = snd $ runCPRef nat cpool
-  let methodName = utfString $ snd $ runCPRef (natName nat') cpool
-  let methodType = utfString $ snd $ runCPRef (natDesc nat') cpool
-  let methodSig = className ++ "." ++ methodName ++ ":" ++ methodType
-  case methodSig of
-    "java/io/PrintStream.println:(Ljava/lang/String;)V" -> do
-      _ <- popStack
-      putStrLn . utfString . snd . flip runCPRef cpool . strString . valCPInfo
-        <$> popStack
-    "java/io/PrintStream.println:(I)V" -> do
-      _ <- popStack
-      print . valInt <$> popStack
-    _ -> error $ "Unknown method: '" ++ methodSig ++ "'"
-
-invokeMethod _ = error "Supplied reference is not a method"
