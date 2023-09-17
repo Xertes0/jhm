@@ -91,17 +91,11 @@ executeMethod (CPMethodref cls nat) = do
   case methodSig of
     "java/io/PrintStream.println:(Ljava/lang/String;)V" -> do
       _ <- popStack
-      pure
-        . putStrLn
-        . utfString
-        . snd
-        . (flip runCPRef) cpool
-        . strString
-        . valCPInfo
-        =<< popStack
+      putStrLn . utfString . snd . flip runCPRef cpool . strString . valCPInfo
+        <$> popStack
     "java/io/PrintStream.println:(I)V" -> do
       _ <- popStack
-      pure . putStrLn . show . valInt =<< popStack
+      print . valInt <$> popStack
     _ -> error $ "Unknown method: '" ++ methodSig ++ "'"
 
 executeMethod _ = error "Supplied reference is not a method"
