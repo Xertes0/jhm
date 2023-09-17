@@ -1,8 +1,9 @@
 module Execution.Frame
   ( Frame
+  , FrameState
   , Value(..)
   , mkFrame
-  , executeMethod
+  , invokeMethod
   , getCpool
   , storeLocal
   , getLocal
@@ -15,6 +16,9 @@ import Data.Binary.Get
 
 import Type.Attribute
 import Type.ConstantPool
+import Type.ClassFile
+
+type FrameState a = StateT (ClassFile, Frame) Get a
 
 data Value
   = ValueBoolean
@@ -39,20 +43,20 @@ data Value
   --   { localRetAddr ::
   --   }
 
-getCpool :: StateT (Frame, ConstantPool) Get ConstantPool
+getCpool :: FrameState ConstantPool
 getCpool = do
-  (_, cpool) <- get
-  return cpool
+  (clsf, _) <- get
+  return $ clsfConstantPool clsf
 
-pushStack :: Value -> StateT (Frame, ConstantPool) Get ()
+pushStack :: Value -> FrameState ()
 pushStack val = do
-  (frame, cpool) <- get
-  put (frame {frmStack = frmStack frame ++ [val]}, cpool)
+  (clsf, frame) <- get
+  put (clsf, frame {frmStack = frmStack frame ++ [val]})
 
-popStack :: StateT (Frame, ConstantPool) Get Value
+popStack :: FrameState Value
 popStack = do
-  (frame, cpool) <- get
-  put (frame {frmStack = tail $ frmStack frame}, cpool)
+  (clsf, frame) <- get
+  put (clsf, frame {frmStack = tail $ frmStack frame})
   return $ head $ frmStack frame
 
 data Frame = Frame
@@ -68,20 +72,20 @@ mkFrame (AttrCode {attrInfoMaxLocals = maxLocals}) =
     }
 mkFrame _ = error "Supplied attribute is not 'Code'"
 
-storeLocal :: Int -> Value -> StateT (Frame, ConstantPool) Get ()
+storeLocal :: Int -> Value -> FrameState ()
 storeLocal idx val = do
-  (frame, cpool) <- get
+  (clsf, frame) <- get
   let (h, t) = splitAt idx $ frmLocals frame
-  put (frame {frmLocals = h ++ [val] ++ tail t}, cpool)
+  put (clsf, frame {frmLocals = h ++ [val] ++ tail t})
 
-getLocal :: Int -> StateT (Frame, ConstantPool) Get Value
+getLocal :: Int -> FrameState Value
 getLocal idx = do
-  (frame, _) <- get
+  (_, frame) <- get
   return $ frmLocals frame !! idx
 
-executeMethod :: CPInfo -> StateT (Frame, ConstantPool) Get (IO ())
-executeMethod (CPMethodref cls nat) = do
-  (_, cpool) <- get
+invokeMethod :: CPInfo -> FrameState (IO ())
+invokeMethod (CPMethodref cls nat) = do
+  cpool <- getCpool
   let cls' = snd $ runCPRef cls cpool
   let className = utfString $ snd $ runCPRef (clsName cls') cpool
   let nat' = snd $ runCPRef nat cpool
@@ -98,4 +102,4 @@ executeMethod (CPMethodref cls nat) = do
       print . valInt <$> popStack
     _ -> error $ "Unknown method: '" ++ methodSig ++ "'"
 
-executeMethod _ = error "Supplied reference is not a method"
+invokeMethod _ = error "Supplied reference is not a method"

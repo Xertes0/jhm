@@ -31,7 +31,7 @@ findMain clsf =
 executeMain :: ClassFile -> [IO ()]
 executeMain clsf =
   runGet
-    (evalStateT executeCode (mkFrame mainCodeAttr, cpool))
+    (evalStateT executeCode (clsf, mkFrame mainCodeAttr))
     (B.pack $ attrInfoCode mainCodeAttr)
   where
     cpool = clsfConstantPool clsf

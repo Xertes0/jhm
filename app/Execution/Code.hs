@@ -4,15 +4,13 @@ module Execution.Code
 
 import Control.Monad.Loops (whileM)
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.State.Lazy
 import Data.Binary.Get
 import Data.Word
 import Numeric (showHex)
 
 import Execution.Frame
-import Type.ConstantPool
 
-executeInstruction :: Word8 -> StateT (Frame, ConstantPool) Get (IO ())
+executeInstruction :: Word8 -> FrameState (IO ())
 
 -- bipush
 executeInstruction 0x10 = do
@@ -52,25 +50,31 @@ executeInstruction 0x84 = do
   storeLocal cpIdx $ ValueInt $ oldLoc + incValue
   return $ pure ()
 
+-- return
+executeInstruction 0xb1 = return $ pure ()
+
 -- getstatic
 executeInstruction 0xb2 = do
-  (_, cpool) <- get
+  cpool <- getCpool
   cpIdx <- fromIntegral <$> lift getWord16be
   pushStack $ ValueCPInfo $ cpool !! cpIdx
   return $ pure ()
 
--- return
-executeInstruction 0xb1 = return $ pure ()
-
 -- invokevirtual
 executeInstruction 0xb6 = do
-  (_, cpool) <- get
+  cpool <- getCpool
   methodRef <- (cpool !!) . fromIntegral <$> lift getWord16be
-  executeMethod methodRef
+  invokeMethod methodRef
+
+-- invokestatic
+executeInstruction 0xb8 = do
+  cpool <- getCpool
+  methodRef <- (cpool !!) . fromIntegral <$> lift getWord16be
+  invokeMethod methodRef
 
 executeInstruction ins = error $ "Unknown instruction: '0x" ++ showHex ins "'"
 
-executeCode :: StateT (Frame, ConstantPool) Get [IO ()]
+executeCode :: FrameState [IO ()]
 executeCode =
   whileM (not <$> lift isEmpty) $ do
     opcode <- lift getWord8
