@@ -25,7 +25,7 @@ validateMagic = do
     else return magic
 
 newtype CPRef a = CPRef
-  { getCPRef :: ConstantPool -> (Word16, a)
+  { runCPRef :: ConstantPool -> (Word16, a)
   }
 
 instance Functor CPRef where
@@ -336,7 +336,7 @@ getMain clsf =
     . assertWith
         "Could not find or found too many 'public static main' methods"
         ((== 1) . length)
-    $ filter ((== "main") . (snd . ($ cpool) . getCPRef . mthdName))
+    $ filter ((== "main") . (snd . ($ cpool) . runCPRef . mthdName))
     $ filter
         ((\x -> AccStatic `elem` x && AccPublic `elem` x) . mthdAccessFlags)
     $ clsfMethods clsf
@@ -404,11 +404,11 @@ getLocal idx = do
 executeMethod :: CPInfo -> StateT (Frame, ConstantPool) Get (IO ())
 executeMethod (CPMethodref cls nat) = do
   (_, cpool) <- get
-  let cls' = snd $ getCPRef cls cpool
-  let className = utfString $ snd $ getCPRef (clsName cls') cpool
-  let nat' = snd $ getCPRef nat cpool
-  let methodName = utfString $ snd $ getCPRef (natName nat') cpool
-  let methodType = utfString $ snd $ getCPRef (natDesc nat') cpool
+  let cls' = snd $ runCPRef cls cpool
+  let className = utfString $ snd $ runCPRef (clsName cls') cpool
+  let nat' = snd $ runCPRef nat cpool
+  let methodName = utfString $ snd $ runCPRef (natName nat') cpool
+  let methodType = utfString $ snd $ runCPRef (natDesc nat') cpool
   let methodSig = className ++ "." ++ methodName ++ ":" ++ methodType
   case methodSig of
     "java/io/PrintStream.println:(Ljava/lang/String;)V" -> do
@@ -417,7 +417,7 @@ executeMethod (CPMethodref cls nat) = do
         . putStrLn
         . utfString
         . snd
-        . (flip getCPRef) cpool
+        . (flip runCPRef) cpool
         . strString
         . valCPInfo
         =<< popStack
@@ -501,13 +501,13 @@ executeMain clsf =
     mainCodeAttr =
       snd
         $ ($ cpool)
-        $ getCPRef
+        $ runCPRef
         $ attrInfo
         $ head
         $ assertWith
             "Could not find or found too many 'Code' attributes for the main method"
             ((== 1) . length)
-        $ filter (isAttrCode . snd . ($ cpool) . getCPRef . attrInfo)
+        $ filter (isAttrCode . snd . ($ cpool) . runCPRef . attrInfo)
         $ mthdAttibutes
         $ getMain clsf
 
