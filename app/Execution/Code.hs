@@ -41,9 +41,7 @@ ificmpC f = do
   offset <- (+ (-3)) . fromIntegral <$> lift getInt16be
   b <- valInt <$> popStack
   a <- valInt <$> popStack
-  if a `f` b
-    then lift $ skip offset
-    else pure ()
+  when (a `f` b) $ lift $ skip offset
   return $ pure ()
 
 executeInstruction :: Word8 -> FrameState (IO ())
