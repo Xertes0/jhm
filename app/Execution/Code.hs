@@ -87,6 +87,14 @@ executeInstruction 0x3c = istoreN 1
 executeInstruction 0x3d = istoreN 2
 executeInstruction 0x3e = istoreN 3
 
+-- swap
+executeInstruction 0x5f = do
+  val1 <- popStack
+  val2 <- popStack
+  pushStack val1
+  pushStack val2
+  return $ pure ()
+
 -- iadd
 executeInstruction 0x60 = do
   b <- valInt <$> popStack
