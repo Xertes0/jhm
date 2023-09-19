@@ -11,6 +11,7 @@ import Codec.Binary.UTF8.String (decode)
 import Control.Monad
 import Data.Binary.Get
 import Data.Word
+import Data.Int
 
 newtype CPRef a = CPRef
   { runCPRef :: ConstantPool -> (Word16, a)
@@ -53,6 +54,9 @@ data CPInfo
   | CPUtf8
       { utfString :: String
       }
+  | CPInteger
+    { cpInfInt :: Int32
+    }
   deriving (Show)
 
 getCPClass :: Get CPInfo
@@ -84,6 +88,9 @@ getCPUtf8 = do
   count <- fromIntegral <$> getWord16be
   CPUtf8 <$> (decode <$> replicateM count getWord8)
 
+getCPInteger :: Get CPInfo
+getCPInteger = CPInteger <$> getInt32be
+
 getCPInfoByTag :: Word8 -> Get CPInfo
 getCPInfoByTag 7 = getCPClass
 getCPInfoByTag 9 = getCPFieldref
@@ -91,7 +98,8 @@ getCPInfoByTag 10 = getCPMethodref
 getCPInfoByTag 8 = getCPString
 getCPInfoByTag 12 = getCPNameAndType
 getCPInfoByTag 1 = getCPUtf8
-getCPInfoByTag _ = error "Unknown info tag"
+getCPInfoByTag 3 = getCPInteger
+getCPInfoByTag n = error $ "Unknown info tag '" ++ show n ++ "'"
 
 getCPInfo :: Get CPInfo
 getCPInfo = do
