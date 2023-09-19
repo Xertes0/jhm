@@ -19,9 +19,11 @@ findMain :: ClassFile -> Method
 findMain clsf =
   head
     . assertWith
-        "Could not find or found too many 'public static main' methods"
+        "Could not find or found too many 'public static main(String[] args)' methods"
         ((== 1) . length)
     $ filter ((== "main") . (snd . ($ cpool) . runCPRef . mthdName))
+    $ filter
+        ((== "([Ljava/lang/String;)V") . (snd . ($ cpool) . runCPRef . mthdDesc))
     $ filter
         ((\x -> AccStatic `elem` x && AccPublic `elem` x) . mthdAccessFlags)
     $ clsfMethods clsf
