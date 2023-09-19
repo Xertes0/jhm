@@ -53,7 +53,7 @@ getClassFile =
     <*> getMethods
     <*> getAttributes
 
-parseClassFile :: IO ClassFile
-parseClassFile = do
-  file <- B.readFile "Main.class"
+parseClassFile :: String -> IO ClassFile
+parseClassFile className = do
+  file <- B.readFile $ className ++ ".class"
   return $ runGet getClassFile file

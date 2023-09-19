@@ -33,8 +33,11 @@ This can be compiled with `javac Main.java`, which will output a
 
 ### Build and run
 
-To build and run the application, simply run:
+To build and run the application use this:
 
 ```bash
-cabal run
+cabal run -- jhm -- <ClassName>
 ```
+
+this will look for a file named `<ClassName>.class`, and execute its
+main method, similar to `java` command.
